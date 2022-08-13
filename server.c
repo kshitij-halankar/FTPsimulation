@@ -31,7 +31,7 @@ void ftp_mkd();
 void ftp_pwd();
 void ftp_list();
 void ftp_stat();
-void ftp_noop();
+void ftp_noop(char *ok);
 
 int main(int argc, char *argv[]){
     int fd, status;
@@ -132,15 +132,22 @@ void child(pid_t pid){
                 printf("command parameter: %s\n", command_parameter);
             }
         } else {
-
+            //handling
+            command_name = client_command;
         }
 
         if(strcmp(command_name, "USER") == 0) {
 
         } else if(strcmp(command_name, "CWD") == 0) {
             ftp_cwd(command_parameter);
+            char new_path[PATH_MAX];
+            getcwd(new_path, PATH_MAX);
+            printf("server directory changed to: %s\n", new_path);
         }else if(strcmp(command_name, "CDUP") == 0) {
-
+            ftp_cdup();
+            char new_path[PATH_MAX];
+            getcwd(new_path, PATH_MAX);
+            printf("server directory changed to: %s\n", new_path);
         }else if(strcmp(command_name, "REIN") == 0) {
 
         }else if(strcmp(command_name, "QUIT") == 0) {
@@ -168,12 +175,24 @@ void child(pid_t pid){
         }else if(strcmp(command_name, "MKD") == 0) {
 
         }else if(strcmp(command_name, "PWD") == 0) {
-
+            ftp_pwd();
         }else if(strcmp(command_name, "LIST") == 0) {
 
         }else if(strcmp(command_name, "STAT") == 0) {
 
         }else if(strcmp(command_name, "NOOP") == 0) {
+            char ok[10];
+            ftp_noop(ok);
+            printf("%s\n",ok);
+            
+            while((server_fd = open(server_pipe, O_WRONLY))==-1){
+                fprintf(stderr, "trying to connect to server pipe %d\n", pid);
+                sleep(5);
+            }
+
+            write(server_fd, ok, strlen(ok));
+            write(server_fd, &newline, 1);
+            close(server_fd);
 
         } else {
             //give error
@@ -207,20 +226,26 @@ void child(pid_t pid){
 }
 
 void ftp_cwd(char *path){
-    char new_path[PATH_MAX];
-    printf("cwd: %s\n",getcwd(new_path,PATH_MAX));
+    // char new_path[PATH_MAX];
+    // printf("cwd: %s\n",getcwd(new_path,PATH_MAX));
     chdir(path);
-    printf("after cwd: %s\n",getcwd(new_path,PATH_MAX));
+    // printf("after cwd: %s\n",getcwd(new_path,PATH_MAX));
 }
 
 void ftp_cdup(){
-    char new_path[PATH_MAX];
-    printf("cwd: %s\n",getcwd(new_path, PATH_MAX));
     chdir("..");
-    printf("after cwd: %s\n",getcwd(new_path, PATH_MAX));
 }
 
 void ftp_port(char *pipeName){
     char * myfifo = pipeName;
     mkfifo(myfifo, 0666);
+}
+
+void ftp_pwd(){
+   char s[100];
+   printf("cwd: %s\n",getcwd(s,100));
+}
+
+void ftp_noop(char *ok){
+    strcpy(ok, "OK");
 }

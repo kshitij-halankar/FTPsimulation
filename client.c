@@ -68,8 +68,18 @@ int main(int argc, char *argv[]){
         command_buf[strcspn(command_buf, "\n")] = 0;
         // fprintf(stderr, "typed command: %s\n",command_buf);
         write(client_fd, command_buf, strlen(command_buf));
-
         close(client_fd);
+
+        while((server_fd = open(server_pipe, O_RDONLY))==-1){
+            fprintf(stderr, "trying to connect to server pipe %d\n", pid);
+            sleep(5);
+        }
+        while(read(server_fd, &ch, 1) == 1){
+            fprintf(stderr, "%c", ch);
+            // server_data[i]=ch;
+            // i++;
+        }
+        close(server_fd);
     }
     // close(fd);
 }
