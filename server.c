@@ -29,7 +29,7 @@ void ftp_rnto(char *oldName, char *newname, char *command_output);
 void ftp_abor();
 void ftp_dele(char *fileName, char *command_output);
 void ftp_rmd(char *dirName, char *command_output);
-void ftp_mkd();
+void ftp_mkd(char *dirName, char *command_output);
 void ftp_pwd(char *pwd);
 void ftp_list();
 void ftp_stat();
@@ -89,6 +89,8 @@ void child(pid_t pid)
     int command_counter = 0;
     int response_code = 0;
 
+    char *prev_cmd = malloc(10 * sizeof(char));
+    char *rename_file_name = malloc(1024 * sizeof(char));
     char *server_pipe = malloc(1024 * sizeof(char)); // for sending data to client
     char *client_pipe = malloc(1024 * sizeof(char)); // for reading commands from client
     strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server/serverpipe_");
@@ -132,6 +134,7 @@ void child(pid_t pid)
         printf("client command: ");
         char ch;
         char *client_command = malloc(1024 * sizeof(char));
+        // char *prev_cmd = malloc(10 * sizeof(char));
         // char client_command[1024], ch;
         int r;
         while ((r = read(client_fd, client_command, 1024)) > 0)
@@ -221,9 +224,21 @@ void child(pid_t pid)
             }
             else if (strcmp(command_name, "RNFR") == 0)
             {
+                strcpy(rename_file_name, command_parameter);
+                // printf("rnfr prev_cmd %s\n", prev_cmd);
+                // printf("rnfr rename_file_name %s\n", rename_file_name);
             }
             else if (strcmp(command_name, "RNTO") == 0)
             {
+                // printf("prev_cmd %s\n", prev_cmd);
+                if (strcmp(prev_cmd, "RNFR") == 0)
+                {
+                    ftp_rnto(rename_file_name, command_parameter, command_output);
+                }
+                else
+                {
+                    // some error
+                }
             }
             else if (strcmp(command_name, "ABOR") == 0)
             {
@@ -234,9 +249,11 @@ void child(pid_t pid)
             }
             else if (strcmp(command_name, "RMD") == 0)
             {
+                ftp_rmd(command_parameter, command_output);
             }
             else if (strcmp(command_name, "MKD") == 0)
             {
+                ftp_mkd(command_parameter, command_output);
             }
             else if (strcmp(command_name, "PWD") == 0)
             {
@@ -280,6 +297,8 @@ void child(pid_t pid)
         write(server_fd, &newline, 1);
         close(server_fd);
         command_counter++;
+        strcpy(prev_cmd, command_name);
+        // printf("x prev_cmd %s\n", prev_cmd);
     }
 }
 
@@ -344,8 +363,8 @@ void ftp_dele(char *fileName, char *command_output)
 
 void ftp_rmd(char *dirName, char *command_output)
 {
-    char *dirname = dirName;
-    int ret = rmdir(dirName);
+    char *dir = dirName;
+    int ret = rmdir(dir);
     if (ret == 0)
     {
         sprintf(command_output, "Directory %s removed successfully", dirName);
@@ -353,6 +372,21 @@ void ftp_rmd(char *dirName, char *command_output)
     else
     {
         sprintf(command_output, "Unable to remove directory %s", dirName);
+    }
+}
+
+void ftp_mkd(char *dirName, char *command_output)
+{
+    int check;
+    char *dirname = dirName;
+    check = mkdir(dirname, 0777);
+    if (!check)
+    {
+        sprintf(command_output, "Directory created");
+    }
+    else
+    {
+        sprintf(command_output, "Unable to create directory");
     }
 }
 
