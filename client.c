@@ -11,18 +11,19 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <libgen.h>
+#include <netdb.h>
 
 int main(int argc, char *argv[])
 {
     char ch;
     int mainpipe_fd, server_fd, client_fd;
     pid_t pid = getpid();
-    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server/server_main_pipe";
+    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server_pipes/server_main_pipe";
 
     char *server_pipe = malloc(1024 * sizeof(char)); // for receiving data form server
     char *client_pipe = malloc(1024 * sizeof(char)); // for sending commands to server
-    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server/serverpipe_");
-    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server/clientpipe_");
+    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/serverpipe_");
+    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/clientpipe_");
     char *client_pid = malloc(6 * sizeof(char));
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);

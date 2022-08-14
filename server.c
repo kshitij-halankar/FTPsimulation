@@ -12,34 +12,35 @@
 #include <limits.h>
 #include <libgen.h>
 #include <dirent.h>
+#include <netdb.h>
 
 void child(pid_t client, char *server_dir);
-void ftp_user();
-int ftp_cwd(char *path, char *command_output);
-void ftp_cdup(char *command_output);
-void ftp_rein();
-void ftp_quit();
+void ftp_user();                               // USER
+int ftp_cwd(char *path, char *command_output); // CWD
+void ftp_cdup(char *command_output);           // CDUP
+void ftp_rein();                               // REIN
+void ftp_quit();                               // QUIT
 void ftp_port(char *pipeName);
 void ftp_retr();
 void ftp_stor();
 void ftp_appe();
 void ftp_rest();
-void ftp_rnfr();
-void ftp_rnto(char *oldName, char *newname, char *command_output);
+void ftp_rnfr();                                                   // RNFR
+void ftp_rnto(char *oldName, char *newname, char *command_output); // RNTO
 void ftp_abor();
-void ftp_dele(char *fileName, char *command_output);
-void ftp_rmd(char *dirName, char *command_output);
-void ftp_mkd(char *dirName, char *command_output);
-void ftp_pwd(char *pwd);
+void ftp_dele(char *fileName, char *command_output); // DELE
+void ftp_rmd(char *dirName, char *command_output);   // RMD
+void ftp_mkd(char *dirName, char *command_output);   // MKD
+void ftp_pwd(char *pwd);                             // PWD
 void ftp_list();
-void ftp_stat();
-void ftp_noop(char *ok);
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param);
+void ftp_noop(char *ok); // NOOP
 
 int main(int argc, char *argv[])
 {
     int fd, status;
     char ch;
-    pid_t pid;
+    pid_t client_pid;
     char *server_dir = malloc(PATH_MAX * sizeof(char));
     if (argc == 2)
     {
@@ -50,7 +51,7 @@ int main(int argc, char *argv[])
     {
         getcwd(server_dir, PATH_MAX);
     }
-    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server/server_main_pipe";
+    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server_pipes/server_main_pipe";
     // strcat(server_main_pipe, server_dir);
     // strcat(server_main_pipe,"/server_main_pipe");
 
@@ -72,12 +73,12 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Waiting for a client\n");
         fd = open(server_main_pipe, O_RDONLY);
         fprintf(stderr, "Got a client: ");
-        read(fd, &pid, sizeof(pid_t));
-        fprintf(stderr, "%ld\n", pid);
+        read(fd, &client_pid, sizeof(pid_t));
+        fprintf(stderr, "%ld\n", client_pid);
         if (fork() == 0)
         {
             close(fd);
-            child(pid, server_dir);
+            child(client_pid, server_dir);
         }
         else
         {
@@ -96,8 +97,8 @@ void child(pid_t pid, char *server_dir)
     char *rename_file_name = malloc(1024 * sizeof(char));
     char *server_pipe = malloc(1024 * sizeof(char)); // for sending data to client
     char *client_pipe = malloc(1024 * sizeof(char)); // for reading commands from client
-    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server/serverpipe_");
-    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server/clientpipe_");
+    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/serverpipe_");
+    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/clientpipe_");
     char *client_pid = malloc(6 * sizeof(char));
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
@@ -156,7 +157,7 @@ void child(pid_t pid, char *server_dir)
         char *command_name = malloc(10 * sizeof(char));
         char *command_parameter = malloc(1024 * sizeof(char));
         char *command_pointer = strtok(client_command, command_delimiter);
-        char *command_output = malloc(2048 * sizeof(char));
+        char *command_output = malloc(10000 * sizeof(char));
         if (command_pointer != NULL)
         {
             command_name = command_pointer;
@@ -231,10 +232,8 @@ void child(pid_t pid, char *server_dir)
                 login = 0;           // logout
                 command_counter = 0; // reset command counter
                 chdir(server_dir);   // reset server directory
-                // strcpy(command_output, "220	Service ready for new user.");
-                // write(server_fd, command_output, strlen(command_output));
-                // write(server_fd, &newline, 1);
                 close(server_fd);
+                strcpy(command_output, "220	Service ready for new user.");
             }
             else if (strcmp(command_name, "QUIT") == 0)
             {
@@ -263,13 +262,9 @@ void child(pid_t pid, char *server_dir)
 
                 // close named pipes
                 close(server_fd);
-                printf("1\n");
                 close(client_fd);
-                printf("2\n");
                 unlink(server_pipe);
-                printf("3\n");
                 unlink(client_pipe);
-                printf("4\n");
 
                 // exit child
                 exit(0);
@@ -324,9 +319,9 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "PWD") == 0)
             {
-                char path[PATH_MAX];
+                char path[1024];
                 ftp_pwd(path);
-                // printf("current path: %s\n", path);
+                printf("current path: %s\n", path);
                 // strcpy(command_output, "current path: ");
                 strcpy(command_output, path);
                 printf("%s\n", command_output);
@@ -336,6 +331,9 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "STAT") == 0)
             {
+
+                ftp_stat(command_output, client_pid, command_counter, command_parameter);
+                printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "NOOP") == 0)
             {
@@ -396,7 +394,7 @@ void ftp_cdup(char *command_output)
 }
 void ftp_pwd(char *pwd)
 {
-    getcwd(pwd, PATH_MAX);
+    getcwd(pwd, 1024);
 }
 
 void ftp_noop(char *ok)
@@ -485,3 +483,37 @@ void ftp_port(char *pipeName)
     char *myfifo = pipeName;
     mkfifo(myfifo, 0666);
 }
+
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param)
+{
+    // char *host = malloc(16 * sizeof(char));
+    char hostbuf[255];
+    char host[1024];
+    host[1023] = '\0';
+    char *server_pid = malloc(30 * sizeof(char));
+    char *hostname = malloc(1024 * sizeof(char));
+    char *curr_server_dir = malloc(255 * sizeof(char));
+    char *cmd_count = malloc(100 * sizeof(char));
+    pid_t serpid = getpid();
+    sprintf(server_pid, "211 Process id is %d\n", serpid);
+
+    gethostname(host, 1023);
+    // printf("Hostname: %s\n", host);
+
+    sprintf(hostname, "211 Server FTP talking to host %s, port \n", host);
+    char *user = malloc(1024 * sizeof(char));
+    getcwd(curr_server_dir, 255);
+    sprintf(user, "211 User: %s  Working directory: %s\n", client_pid, curr_server_dir);
+    sprintf(cmd_count, "211 Command count is %d\n", command_count);
+
+    strcpy(command_output, hostname); // 211 Server FTP talking to host #server_host, port <>
+    strcat(command_output, user); // 211 User: #client_pid  Working directory: #cwd
+    strcat(command_output, "211 The control connection established using pipes (bidirectional)\n"); // 211 The control connection using pipes (bidirectional)
+    strcat(command_output, "211 There is no current data connection\n"); // 211 There is no current data connection / Data connection established using pipes (#pipenames)
+    strcat(command_output, "211 using Mode: Stream, Structure: File\n"); // 211 using Mode Stream, Structure File
+    strcat(command_output, cmd_count); // 211 Command count is ##cc
+    strcat(command_output, server_pid); // 211 Process id is ##server_pid
+    strcat(command_output, "211 Authentication type: None\n"); // 211 Authentication type: None
+    strcat(command_output, "211 *** end of status ***"); // 211 *** end of status ***
+}
+
