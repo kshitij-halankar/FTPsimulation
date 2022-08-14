@@ -81,11 +81,21 @@ int main(int argc, char *argv[])
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);
             sleep(5);
         }
+        int i = 0;
+        char server_data[1024];
         while (read(server_fd, &ch, 1) == 1)
         {
             fprintf(stderr, "%c", ch);
-            // server_data[i]=ch;
-            // i++;
+            server_data[i] = ch;
+            i++;
+        }
+        char *server_data_str = strdup(server_data);
+        // printf("server_data_str: %s", server_data_str);
+        server_data_str[strcspn(server_data_str, "\n")] = 0;
+        // printf("server_data_str: %s", server_data_str);
+        if (strcmp(server_data_str, "221 Service closing control connection.") == 0)
+        {
+            exit(0);
         }
         close(server_fd);
     }

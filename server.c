@@ -13,7 +13,7 @@
 #include <libgen.h>
 #include <dirent.h>
 
-void child(pid_t client);
+void child(pid_t client, char *server_dir);
 void ftp_user();
 int ftp_cwd(char *path, char *command_output);
 void ftp_cdup(char *command_output);
@@ -54,6 +54,8 @@ int main(int argc, char *argv[])
     // strcat(server_main_pipe, server_dir);
     // strcat(server_main_pipe,"/server_main_pipe");
 
+    chdir(server_dir);
+
     printf("server directory: %s\n", server_dir);
     printf("server main pipe: %s\n", server_main_pipe);
 
@@ -75,7 +77,7 @@ int main(int argc, char *argv[])
         if (fork() == 0)
         {
             close(fd);
-            child(pid);
+            child(pid, server_dir);
         }
         else
         {
@@ -84,12 +86,12 @@ int main(int argc, char *argv[])
     }
 }
 
-void child(pid_t pid)
+void child(pid_t pid, char *server_dir)
 {
     int command_counter = 0;
     int response_code = 0;
     int login = 0;
-
+    int data_connection = 0;
     char *prev_cmd = malloc(10 * sizeof(char));
     char *rename_file_name = malloc(1024 * sizeof(char));
     char *server_pipe = malloc(1024 * sizeof(char)); // for sending data to client
@@ -206,9 +208,71 @@ void child(pid_t pid)
             }
             else if (strcmp(command_name, "REIN") == 0)
             {
+                while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
+                {
+                    fprintf(stderr, "trying to connect to server pipe %d\n", pid);
+                    sleep(5);
+                }
+                // printf("command_output: %s\n", command_output);
+                strcpy(command_output, "120	Service ready in 1 minutes.");
+                write(server_fd, command_output, strlen(command_output));
+                write(server_fd, &newline, 1);
+                while (1)
+                {
+                    if (data_connection == 0)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        sleep(5);
+                    }
+                }
+                login = 0;           // logout
+                command_counter = 0; // reset command counter
+                chdir(server_dir);   // reset server directory
+                // strcpy(command_output, "220	Service ready for new user.");
+                // write(server_fd, command_output, strlen(command_output));
+                // write(server_fd, &newline, 1);
+                close(server_fd);
             }
             else if (strcmp(command_name, "QUIT") == 0)
             {
+                // wait for any open data transfers
+                while (1)
+                {
+                    if (data_connection == 0)
+                    {
+                        // if data connection pipes are open close them
+                        break;
+                    }
+                    else
+                    {
+                        sleep(5);
+                    }
+                }
+                // send quit message to client
+                while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
+                {
+                    fprintf(stderr, "trying to connect to server pipe %d\n", pid);
+                    sleep(5);
+                }
+                strcpy(command_output, "221 Service closing control connection.");
+                write(server_fd, command_output, strlen(command_output));
+                write(server_fd, &newline, 1);
+
+                // close named pipes
+                close(server_fd);
+                printf("1\n");
+                close(client_fd);
+                printf("2\n");
+                unlink(server_pipe);
+                printf("3\n");
+                unlink(client_pipe);
+                printf("4\n");
+
+                // exit child
+                exit(0);
             }
             else if (strcmp(command_name, "PORT") == 0)
             {
@@ -283,7 +347,7 @@ void child(pid_t pid)
             else
             {
                 // invalid command
-                strcpy(command_output, "invalid command: ");
+                strcpy(command_output, "502	Command not implemented.");
                 strcat(command_output, command_name);
             }
         }
