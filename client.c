@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "trying to connect to client pipe %d\n", pid);
             sleep(5);
         }
-        printf("Enter a command: \n");
+        printf("ftp> ");
         char command_buf[1024];
         fgets(command_buf, 1024, stdin);
         command_buf[strcspn(command_buf, "\n")] = 0;

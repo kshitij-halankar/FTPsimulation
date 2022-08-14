@@ -88,6 +88,7 @@ void child(pid_t pid)
 {
     int command_counter = 0;
     int response_code = 0;
+    int login = 0;
 
     char *prev_cmd = malloc(10 * sizeof(char));
     char *rename_file_name = malloc(1024 * sizeof(char));
@@ -173,9 +174,10 @@ void child(pid_t pid)
         }
 
         // check if USER is first command
-        if (command_counter == 0 && strcmp(command_name, "USER") != 0)
+        if (login == 0 && strcmp(command_name, "USER") != 0)
         {
-            strcpy(command_output, "Please run USER command to login and establish connection.");
+            // strcpy(command_output, "Please run USER command to login and establish connection.");
+            strcpy(command_output, "530 Not logged in.");
         }
         else
         {
@@ -183,6 +185,7 @@ void child(pid_t pid)
             {
                 if (response_code == 230)
                 {
+                    login = 1;
                     strcpy(command_output, "230 User logged in, proceed.");
                 }
                 else
@@ -192,7 +195,7 @@ void child(pid_t pid)
             }
             else if (strcmp(command_name, "CWD") == 0)
             {
-                printf("param length: %d\n", strlen(command_parameter));
+                // printf("param length: %d\n", strlen(command_parameter));
                 ftp_cwd(command_parameter, command_output);
                 printf("%s\n", command_output);
             }
@@ -237,7 +240,7 @@ void child(pid_t pid)
                 }
                 else
                 {
-                    // some error
+                    strcpy(command_output, "503	Bad sequence of commands.");
                 }
             }
             else if (strcmp(command_name, "ABOR") == 0)
@@ -260,8 +263,7 @@ void child(pid_t pid)
                 char path[PATH_MAX];
                 ftp_pwd(path);
                 // printf("current path: %s\n", path);
-
-                strcpy(command_output, "current path: ");
+                // strcpy(command_output, "current path: ");
                 strcpy(command_output, path);
                 printf("%s\n", command_output);
             }
@@ -275,7 +277,6 @@ void child(pid_t pid)
             {
                 char ok[10];
                 ftp_noop(ok);
-
                 strcpy(command_output, ok);
                 printf("%s\n", command_output);
             }
@@ -309,33 +310,26 @@ int ftp_cwd(char *path, char *command_output)
     {
         chdir(path);
         closedir(dir_path);
-        strcpy(command_output, "server directory changed to: ");
-        char *new_path = malloc(255 * sizeof(char));
-        getcwd(new_path, 255);
-        strcat(command_output, new_path);
+        strcpy(command_output, "250	Requested file action okay, completed.");
+        // char *new_path = malloc(255 * sizeof(char));
+        // getcwd(new_path, 255);
+        // strcat(command_output, new_path);
         // printf("command_output: %s\n", command_output);
     }
     else
     {
-        strcpy(command_output, "failed to change directory.");
+        strcpy(command_output, "501	Syntax error in parameters or arguments.");
     }
 }
 
 void ftp_cdup(char *command_output)
 {
     chdir("..");
-    strcpy(command_output, "server directory changed to: ");
+    // strcpy(command_output, "200 The requested action has been successfully completed.");
     char *new_path = malloc(255 * sizeof(char));
     getcwd(new_path, 255);
-    strcat(command_output, new_path);
+    strcpy(command_output, new_path);
 }
-
-void ftp_port(char *pipeName)
-{
-    char *myfifo = pipeName;
-    mkfifo(myfifo, 0666);
-}
-
 void ftp_pwd(char *pwd)
 {
     getcwd(pwd, PATH_MAX);
@@ -353,11 +347,13 @@ void ftp_dele(char *fileName, char *command_output)
     // printf("filename: %s \n", fname);
     if (remove(fname) == 0)
     {
-        sprintf(command_output, "File %s deleted successfully", fname);
+        strcpy(command_output, "250	Requested file action okay, completed.");
+        // sprintf(command_output, "File %s deleted successfully", fname);
     }
     else
     {
-        sprintf(command_output, "Unable to delete the file %s", fname);
+        strcpy(command_output, "450	Requested file action not taken.");
+        // sprintf(command_output, "Unable to delete the file %s", fname);
     }
 }
 
@@ -382,11 +378,22 @@ void ftp_mkd(char *dirName, char *command_output)
     check = mkdir(dirname, 0777);
     if (!check)
     {
-        sprintf(command_output, "Directory created");
+        // char *new_path = malloc(255 * sizeof(char));
+        // getcwd(new_path, 255);
+        // strcpy(command_output, new_path);
+        char buf[255];
+        char *res = realpath(dirName, buf);
+        if (res)
+        {
+            strcpy(command_output, buf);
+        }
+        strcat(command_output, " created.");
+        // sprintf(command_output, "Directory created");
     }
     else
     {
-        sprintf(command_output, "Unable to create directory");
+        strcpy(command_output, "501	Syntax error in parameters or arguments.");
+        // sprintf(command_output, "Unable to create directory");
     }
 }
 
@@ -399,10 +406,18 @@ void ftp_rnto(char *oldName, char *newname, char *command_output)
     int result = rename(old_name, new_name);
     if (result == 0)
     {
-        sprintf(command_output, "The file %s is renamed successfully to %s", oldName, newname);
+        strcpy(command_output, "250	Requested file action okay, completed.");
+        // sprintf(command_output, "The file %s is renamed successfully to %s", oldName, newname);
     }
     else
     {
-        sprintf(command_output, "The file %s could not be renamed to %s", oldName, newname);
+        strcpy(command_output, "553	Requested action not taken. File name not allowed.");
+        // sprintf(command_output, "The file %s could not be renamed to %s", oldName, newname);
     }
+}
+
+void ftp_port(char *pipeName)
+{
+    char *myfifo = pipeName;
+    mkfifo(myfifo, 0666);
 }
