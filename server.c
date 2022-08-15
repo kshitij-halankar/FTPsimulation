@@ -21,8 +21,8 @@ void ftp_cdup(char *command_output);           // CDUP
 void ftp_rein();                               // REIN
 void ftp_quit();                               // QUIT
 void ftp_port(char *pipeName);
-void ftp_retr();
-void ftp_stor();
+void ftp_retr(char *data_pipe, char *filename);
+void ftp_stor(char *data_pipe, char *filename);
 void ftp_appe();
 void ftp_rest();
 void ftp_rnfr();                                                   // RNFR
@@ -97,6 +97,9 @@ void child(pid_t pid, char *server_dir)
     char *rename_file_name = malloc(1024 * sizeof(char));
     char *server_pipe = malloc(1024 * sizeof(char)); // for sending data to client
     char *client_pipe = malloc(1024 * sizeof(char)); // for reading commands from client
+    char *data_pipe = malloc(255 * sizeof(char));
+    int data_port = 0;
+    strcpy(data_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/");
     strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/serverpipe_");
     strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/clientpipe_");
     char *client_pid = malloc(6 * sizeof(char));
@@ -271,18 +274,62 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "PORT") == 0)
             {
+                if (data_port == 0)
+                {
+                    strcat(data_pipe, command_parameter);
+                    ftp_port(data_pipe);
+                    data_port = 1;
+                }
+                else
+                {
+                    strcpy(command_output, "500 data connection already opened.");
+                }
             }
             else if (strcmp(command_name, "RETR") == 0)
             {
+                if (data_port == 1)
+                {
+                    ftp_retr(data_pipe, command_parameter);
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "STOR") == 0)
             {
+                if (data_port == 1)
+                {
+                    ftp_stor(data_pipe, command_parameter);
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "APPE") == 0)
             {
+                if (data_port == 1)
+                {
+                    // close data connection
+                    data_port = 0;
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "REST") == 0)
             {
+                if (data_port == 1)
+                {
+                    // close data connection
+                    data_port = 0;
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "RNFR") == 0)
             {
@@ -304,6 +351,15 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "ABOR") == 0)
             {
+                if (data_port == 1)
+                {
+                    // close data connection
+                    data_port = 0;
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "DELE") == 0)
             {
@@ -478,12 +534,6 @@ void ftp_rnto(char *oldName, char *newname, char *command_output)
     }
 }
 
-void ftp_port(char *pipeName)
-{
-    char *myfifo = pipeName;
-    mkfifo(myfifo, 0666);
-}
-
 void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param)
 {
     // char *host = malloc(16 * sizeof(char));
@@ -506,14 +556,76 @@ void ftp_stat(char *command_output, char *client_pid, int command_count, char *c
     sprintf(user, "211 User: %s  Working directory: %s\n", client_pid, curr_server_dir);
     sprintf(cmd_count, "211 Command count is %d\n", command_count);
 
-    strcpy(command_output, hostname); // 211 Server FTP talking to host #server_host, port <>
-    strcat(command_output, user); // 211 User: #client_pid  Working directory: #cwd
+    strcpy(command_output, hostname);                                                               // 211 Server FTP talking to host #server_host, port <>
+    strcat(command_output, user);                                                                   // 211 User: #client_pid  Working directory: #cwd
     strcat(command_output, "211 The control connection established using pipes (bidirectional)\n"); // 211 The control connection using pipes (bidirectional)
-    strcat(command_output, "211 There is no current data connection\n"); // 211 There is no current data connection / Data connection established using pipes (#pipenames)
-    strcat(command_output, "211 using Mode: Stream, Structure: File\n"); // 211 using Mode Stream, Structure File
-    strcat(command_output, cmd_count); // 211 Command count is ##cc
-    strcat(command_output, server_pid); // 211 Process id is ##server_pid
-    strcat(command_output, "211 Authentication type: None\n"); // 211 Authentication type: None
-    strcat(command_output, "211 *** end of status ***"); // 211 *** end of status ***
+    strcat(command_output, "211 There is no current data connection\n");                            // 211 There is no current data connection / Data connection established using pipes (#pipenames)
+    strcat(command_output, "211 using Mode: Stream, Structure: File\n");                            // 211 using Mode Stream, Structure File
+    strcat(command_output, cmd_count);                                                              // 211 Command count is ##cc
+    strcat(command_output, server_pid);                                                             // 211 Process id is ##server_pid
+    strcat(command_output, "211 Authentication type: None\n");                                      // 211 Authentication type: None
+    strcat(command_output, "211 *** end of status ***");                                            // 211 *** end of status ***
 }
 
+void ftp_port(char *pipeName)
+{
+    int port_fd;
+    // creating command pipes
+    mkfifo(pipeName, 0777);
+    chmod(pipeName, 0777);
+    // while ((port_fd = open(pipeName, O_WRONLY)) == -1)
+    // {
+    //     fprintf(stderr, "trying to connect to data pipe %s\n", pipeName);
+    //     sleep(5);
+    // }
+
+    // write(port_fd, "data pipe created", 22);
+    // write(port_fd, &newline, 1);
+    // close(port_fd);
+}
+
+void ftp_stor(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+    while ((port_fd = open(data_pipe, O_RDONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_CREAT|O_WRONLY|O_TRUNC, 0777)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(port_fd, &ch, 1) == 1)
+    {
+        write(file_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
+}
+
+void ftp_retr(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+    while ((port_fd = open(data_pipe, O_WRONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_RDONLY)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(file_fd, &ch, 1) == 1)
+    {
+        write(port_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
+}

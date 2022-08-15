@@ -13,12 +13,17 @@
 #include <libgen.h>
 #include <netdb.h>
 
+void ftp_stor(char *data_pipe, char *filename);
+void ftp_retr(char *data_pipe, char *filename);
+
 int main(int argc, char *argv[])
 {
     char ch;
     int mainpipe_fd, server_fd, client_fd;
     pid_t pid = getpid();
     char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server_pipes/server_main_pipe";
+    char *data_pipe = malloc(255 * sizeof(char));
+    strcpy(data_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/");
 
     char *server_pipe = malloc(1024 * sizeof(char)); // for receiving data form server
     char *client_pipe = malloc(1024 * sizeof(char)); // for sending commands to server
@@ -77,6 +82,51 @@ int main(int argc, char *argv[])
         write(client_fd, command_buf, strlen(command_buf));
         close(client_fd);
 
+        char *client_command = malloc(1024 * sizeof(char));
+        strcpy(client_command, command_buf);
+
+        char command_delimiter[] = " ";
+        char *command_name = malloc(10 * sizeof(char));
+        char *command_parameter = malloc(1024 * sizeof(char));
+        char *command_pointer = strtok(client_command, command_delimiter);
+        if (command_pointer != NULL)
+        {
+            command_name = command_pointer;
+            printf("command name: %s\n", command_name);
+            command_pointer = strtok(NULL, command_delimiter);
+            if (command_pointer != NULL)
+            {
+                command_parameter = command_pointer;
+                printf("command parameter: %s\n", command_parameter);
+            }
+        }
+        else
+        {
+            // handling
+            command_name = client_command;
+            printf("else: command_name: %s client_command: %s\n", command_name, client_command);
+        }
+
+        if (strcmp(client_command, "PORT") == 0)
+        {
+            strcat(data_pipe, command_parameter);
+        }
+        else if (strcmp(client_command, "STOR") == 0)
+        {
+            ftp_stor(data_pipe, command_parameter);
+        }
+        else if (strcmp(client_command, "APPE") == 0)
+        {
+            ftp_stor(data_pipe, command_parameter);
+        }
+        else if (strcmp(client_command, "RETR") == 0)
+        {
+            ftp_retr(data_pipe, command_parameter);
+        }
+        else if (strcmp(client_command, "REST") == 0)
+        {
+        }
+
         while ((server_fd = open(server_pipe, O_RDONLY)) == -1)
         {
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);
@@ -101,4 +151,51 @@ int main(int argc, char *argv[])
         close(server_fd);
     }
     // close(fd);
+}
+
+void ftp_stor(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+    while ((port_fd = open(data_pipe, O_WRONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_RDONLY)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(file_fd, &ch, 1) == 1)
+    {
+        write(port_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
+}
+
+void ftp_retr(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+
+    while ((port_fd = open(data_pipe, O_RDONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_CREAT|O_WRONLY|O_TRUNC, 0777)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(port_fd, &ch, 1) == 1)
+    {
+        write(file_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
 }
