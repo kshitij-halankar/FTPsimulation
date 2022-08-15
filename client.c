@@ -1,4 +1,4 @@
-#include <wait.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,8 +56,8 @@ int main(int argc, char *argv[])
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
     strcat(client_pipe, client_pid);
-    printf("server_pipe: %s\n", server_pipe);
-    printf("client_pipe: %s\n", client_pipe);
+    // printf("server_pipe: %s\n", server_pipe);
+    // printf("client_pipe: %s\n", client_pipe);
 
     strcpy(server_pipe_g, server_pipe);
     strcpy(client_pipe_g, client_pipe);
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
         close(server_fd);
         char *server_resp = malloc(1024 * sizeof(char));
         strcpy(server_resp, server_response_data);
-        printf("server_resp : %s\n", server_resp);
+        // printf("server_resp : %s\n", server_resp);
         if (strcmp(server_resp, "server exit") == 0)
         {
             printf("Client exiting.\n");
@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
         char command_buf[1024];
         fgets(command_buf, 1024, stdin);
         command_buf[strcspn(command_buf, "\n")] = 0;
-        fprintf(stderr, "typed command: %s\n", command_buf);
+        // fprintf(stderr, "typed command: %s\n", command_buf);
         write(client_fd, command_buf, 1024);
         close(client_fd);
 
@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
         {
             pos = atoi(command_parameter);
         }
-        printf("waiting for server response\n");
+        // printf("waiting for server response\n");
         while ((server_fd = open(server_pipe, O_RDONLY)) == -1)
         {
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);

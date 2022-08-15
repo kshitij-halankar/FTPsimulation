@@ -1,6 +1,6 @@
 #define _XOPEN_SOURCE 500
 #include <ftw.h>
-#include <wait.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,11 +61,11 @@ void exit_handler()
         unlink(pipe_arr[m]);
     }
 
-    printf("exiting : %d\n", getpid());
+    printf("server exiting : %d\n", getpid());
     if (parent_pid == getpid())
     {
         int k = 0;
-        printf("client_counter: %d\n", client_counter);
+        // printf("client_counter: %d\n", client_counter);
         for (k = 0; k < client_counter; k++)
         {
             pid_t client_pid1 = client_pid_arr[k];
@@ -92,7 +92,7 @@ void exit_handler()
 int main(int argc, char *argv[])
 {
     parent_pid = getpid();
-    printf("parent: %d\n", parent_pid);
+    // printf("parent: %d\n", parent_pid);
     int fd, status;
     char ch;
     pid_t client_pid;
@@ -120,8 +120,8 @@ int main(int argc, char *argv[])
 
     chdir(server_dir);
 
-    printf("server directory: %s\n", server_dir);
-    printf("server main pipe: %s\n", server_main_pipe);
+    // printf("server directory: %s\n", server_dir);
+    // printf("server main pipe: %s\n", server_main_pipe);
 
     unlink(server_main_pipe);
     if (mkfifo(server_main_pipe, 0777))
@@ -185,13 +185,13 @@ void child(pid_t pid, char *server_dir)
 
     char *client_pid = malloc(6 * sizeof(char));
     client_pid_g = pid;
-    printf("Client pid _ g: %d\n", client_pid_g);
+    // printf("Client pid _ g: %d\n", client_pid_g);
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
     strcat(client_pipe, client_pid);
-    printf("server_pipe: %s\n", server_pipe);
-    printf("client_pipe: %s\n", client_pipe);
-    printf("data_pipe: %s\n", data_pipe);
+    // printf("server_pipe: %s\n", server_pipe);
+    // printf("client_pipe: %s\n", client_pipe);
+    // printf("data_pipe: %s\n", data_pipe);
 
     char newline = '\n';
     int mainpipe_fd, server_fd, client_fd, i;
@@ -212,9 +212,6 @@ void child(pid_t pid, char *server_dir)
     strcat(pipe_arr[pipe_count], "clientpipe_");
     strcat(pipe_arr[pipe_count], client_pid);
     pipe_count++;
-
-    // strcpy(server_pipe_g, server_pipe);
-    // strcpy(client_pipe_g, client_pipe);
 
     while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
     {
@@ -237,7 +234,7 @@ void child(pid_t pid, char *server_dir)
             fprintf(stderr, "trying to connect to client pipe %d\n", pid);
             sleep(5);
         }
-        printf("client command: ");
+        // printf("client command: ");
         char ch;
         char *client_command = malloc(1024 * sizeof(char));
         // char *prev_cmd = malloc(10 * sizeof(char));
@@ -245,10 +242,10 @@ void child(pid_t pid, char *server_dir)
         int r;
         while ((r = read(client_fd, client_command, 1024)) > 0)
         {
-            printf("%s\n", client_command);
+            // printf("%s\n", client_command);
         }
         client_command[strcspn(client_command, "\n")] = 0;
-        printf("after clean: %s\n", client_command);
+        // printf("after clean: %s\n", client_command);
 
         // working on command
         char command_delimiter[] = " ";
@@ -259,12 +256,12 @@ void child(pid_t pid, char *server_dir)
         if (command_pointer != NULL)
         {
             command_name = command_pointer;
-            printf("command name: %s\n", command_name);
+            // printf("command name: %s\n", command_name);
             command_pointer = strtok(NULL, command_delimiter);
             if (command_pointer != NULL)
             {
                 command_parameter = command_pointer;
-                printf("command parameter: %s\n", command_parameter);
+                // printf("command parameter: %s\n", command_parameter);
             }
         }
         else
@@ -272,7 +269,7 @@ void child(pid_t pid, char *server_dir)
             // handling
             command_name = client_command;
             command_parameter = "";
-            printf("else: command_name: %s client_command: %s\n", command_name, client_command);
+            // printf("else: command_name: %s client_command: %s\n", command_name, client_command);
         }
 
         // check if USER is first command
@@ -299,7 +296,7 @@ void child(pid_t pid, char *server_dir)
             {
                 // printf("param length: %d\n", strlen(command_parameter));
                 ftp_cwd(command_parameter, command_output);
-                printf("%s\n", command_output);
+                // printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "CDUP") == 0)
             {
@@ -430,7 +427,7 @@ void child(pid_t pid, char *server_dir)
                 if (data_port == 1)
                 {
                     ftp_rest(command_parameter, &filepos, command_output);
-                    printf("filepos: %d\n", filepos);
+                    // printf("filepos: %d\n", filepos);
                 }
                 else
                 {
@@ -440,6 +437,7 @@ void child(pid_t pid, char *server_dir)
             else if (strcmp(command_name, "RNFR") == 0)
             {
                 strcpy(rename_file_name, command_parameter);
+                strcpy(command_output, "250	Requested file action okay, completed.");
                 // printf("rnfr prev_cmd %s\n", prev_cmd);
                 // printf("rnfr rename_file_name %s\n", rename_file_name);
             }
@@ -486,10 +484,10 @@ void child(pid_t pid, char *server_dir)
             {
                 char path[1024];
                 ftp_pwd(path);
-                printf("current path: %s\n", path);
+                // printf("current path: %s\n", path);
                 // strcpy(command_output, "current path: ");
                 strcpy(command_output, path);
-                printf("%s\n", command_output);
+                // printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "LIST") == 0)
             {
@@ -506,14 +504,14 @@ void child(pid_t pid, char *server_dir)
             else if (strcmp(command_name, "STAT") == 0)
             {
                 ftp_stat(command_output, client_pid, command_counter, command_parameter);
-                printf("%s\n", command_output);
+                // printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "NOOP") == 0)
             {
                 char ok[10];
                 ftp_noop(ok);
                 strcpy(command_output, ok);
-                printf("%s\n", command_output);
+                // printf("%s\n", command_output);
             }
             else
             {
@@ -522,13 +520,13 @@ void child(pid_t pid, char *server_dir)
                 strcat(command_output, command_name);
             }
         }
-        printf("Writing server response\n");
+        // printf("Writing server response\n");
         while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
         {
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);
             sleep(5);
         }
-        printf("command_output: %s\n", command_output);
+        // printf("command_output: %s\n", command_output);
         write(server_fd, command_output, strlen(command_output));
         write(server_fd, &newline, 1);
         close(server_fd);
@@ -607,48 +605,6 @@ int ftp_rmd(char *filepath)
     return nftw(filepath, unlink_rem, 64, FTW_DEPTH | FTW_PHYS);
 }
 
-// int ftp_rmd(const char *path, char *command_output)
-// {
-//     DIR *d = opendir(path);
-//     size_t path_len = strlen(path);
-//     int r = -1;
-//     if (d)
-//     {
-//         struct dirent *p;
-//         r = 0;
-//         while (!r && (p = readdir(d)))
-//         {
-//             int r2 = -1;
-//             char *buf;
-//             size_t len;
-//             if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
-//                 continue;
-//             len = path_len + strlen(p->d_name) + 2;
-//             buf = malloc(len);
-//             if (buf)
-//             {
-//                 struct stat statbuf;
-//                 snprintf(buf, len, "%s/%s", path, p->d_name);
-//                 if (!stat(buf, &statbuf))
-//                 {
-//                     if (S_ISDIR(statbuf.st_mode))
-//                         r2 = ftp_rmd(buf, command_output);
-//                     else
-//                         r2 = unlink(buf);
-//                 }
-//                 free(buf);
-//             }
-//             r = r2;
-//         }
-//         closedir(d);
-//     }
-//     if (!r)
-//     {
-//         r = rmdir(path);
-//     }
-//     strcpy(command_output, "250 Requested file action okay, completed.");
-// }
-
 void ftp_mkd(char *dirName, char *command_output)
 {
     int check;
@@ -682,6 +638,7 @@ void ftp_rnto(char *oldName, char *newname, char *command_output)
     char *ts2 = strdup(newname);
     char *new_name = basename(ts2);
     int result = rename(old_name, new_name);
+    strcpy(command_output, "250	Requested file action okay, completed.");
     if (result == 0)
     {
         strcpy(command_output, "250	Requested file action okay, completed.");
