@@ -13,28 +13,30 @@
 #include <libgen.h>
 #include <dirent.h>
 #include <netdb.h>
+#include <libgen.h>
 
 void child(pid_t client, char *server_dir);
-void ftp_user();                               // USER
-int ftp_cwd(char *path, char *command_output); // CWD
-void ftp_cdup(char *command_output);           // CDUP
-void ftp_rein();                               // REIN
-void ftp_quit();                               // QUIT
+void ftp_user();
+int ftp_cwd(char *path, char *command_output);
+void ftp_cdup(char *command_output);
+void ftp_rein();
+void ftp_quit();
 void ftp_port(char *pipeName);
 void ftp_retr(char *data_pipe, char *filename);
 void ftp_stor(char *data_pipe, char *filename);
-void ftp_appe();
+void ftp_appe(char *data_pipe, char *filename);
 void ftp_rest();
-void ftp_rnfr();                                                   // RNFR
-void ftp_rnto(char *oldName, char *newname, char *command_output); // RNTO
+void ftp_rnfr();
+void ftp_rnto(char *oldName, char *newname, char *command_output);
 void ftp_abor();
-void ftp_dele(char *fileName, char *command_output); // DELE
-void ftp_rmd(char *dirName, char *command_output);   // RMD
-void ftp_mkd(char *dirName, char *command_output);   // MKD
-void ftp_pwd(char *pwd);                             // PWD
-void ftp_list();
-void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param);
-void ftp_noop(char *ok); // NOOP
+void ftp_dele(char *fileName, char *command_output);
+int ftp_rmd(const char *path, char *command_output);
+void ftp_mkd(char *dirName, char *command_output);
+void ftp_pwd(char *pwd);
+void ftp_list(char *fileName, char *command_output);
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param, int param_count);
+void ftp_noop(char *ok);
+int printFileNames();
 
 int main(int argc, char *argv[])
 {
@@ -51,7 +53,7 @@ int main(int argc, char *argv[])
     {
         getcwd(server_dir, PATH_MAX);
     }
-    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server_pipes/server_main_pipe";
+    char *server_main_pipe = "../server_pipes/server_main_pipe";
     // strcat(server_main_pipe, server_dir);
     // strcat(server_main_pipe,"/server_main_pipe");
 
@@ -99,9 +101,9 @@ void child(pid_t pid, char *server_dir)
     char *client_pipe = malloc(1024 * sizeof(char)); // for reading commands from client
     char *data_pipe = malloc(255 * sizeof(char));
     int data_port = 0;
-    strcpy(data_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/");
-    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/serverpipe_");
-    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/clientpipe_");
+    strcpy(data_pipe, "../server_pipes/");
+    strcpy(server_pipe, "../server_pipes/serverpipe_");
+    strcpy(client_pipe, "../server_pipes/clientpipe_");
     char *client_pid = malloc(6 * sizeof(char));
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
@@ -221,15 +223,20 @@ void child(pid_t pid, char *server_dir)
                 strcpy(command_output, "120	Service ready in 1 minutes.");
                 write(server_fd, command_output, strlen(command_output));
                 write(server_fd, &newline, 1);
-                while (1)
+                if (data_port == 1)
                 {
-                    if (data_connection == 0)
+                    while (1)
                     {
-                        break;
-                    }
-                    else
-                    {
-                        sleep(5);
+                        if (data_port == 1)
+                        {
+                            unlink(data_pipe);
+                            data_port = 0;
+                            break;
+                        }
+                        else
+                        {
+                            sleep(5);
+                        }
                     }
                 }
                 login = 0;           // logout
@@ -241,16 +248,21 @@ void child(pid_t pid, char *server_dir)
             else if (strcmp(command_name, "QUIT") == 0)
             {
                 // wait for any open data transfers
-                while (1)
+                if (data_port == 1)
                 {
-                    if (data_connection == 0)
+                    while (1)
                     {
-                        // if data connection pipes are open close them
-                        break;
-                    }
-                    else
-                    {
-                        sleep(5);
+                        if (data_port == 1)
+                        {
+                            // if data connection pipes are open close them
+                            unlink(data_pipe);
+                            data_port = 0;
+                            break;
+                        }
+                        else
+                        {
+                            sleep(5);
+                        }
                     }
                 }
                 // send quit message to client
@@ -311,8 +323,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    // close data connection
-                    data_port = 0;
+                    ftp_appe(data_pipe, command_parameter);
                 }
                 else
                 {
@@ -354,7 +365,9 @@ void child(pid_t pid, char *server_dir)
                 if (data_port == 1)
                 {
                     // close data connection
+                    unlink(data_pipe);
                     data_port = 0;
+                    strcpy(command_output, "226 Closing data connection.");
                 }
                 else
                 {
@@ -384,11 +397,12 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "LIST") == 0)
             {
+                ftp_list(command_parameter, command_output);
             }
             else if (strcmp(command_name, "STAT") == 0)
             {
 
-                ftp_stat(command_output, client_pid, command_counter, command_parameter);
+                ftp_stat(command_output, client_pid, command_counter, command_parameter, 0);
                 printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "NOOP") == 0)
@@ -475,17 +489,44 @@ void ftp_dele(char *fileName, char *command_output)
     }
 }
 
-void ftp_rmd(char *dirName, char *command_output)
+int ftp_rmd(const char *path, char *command_output)
 {
-    char *dir = dirName;
-    int ret = rmdir(dir);
-    if (ret == 0)
+    DIR *d = opendir(path);
+    size_t path_len = strlen(path);
+    int r = -1;
+    if (d)
     {
-        sprintf(command_output, "Directory %s removed successfully", dirName);
+        struct dirent *p;
+        r = 0;
+        while (!r && (p = readdir(d)))
+        {
+            int r2 = -1;
+            char *buf;
+            size_t len;
+            if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+                continue;
+            len = path_len + strlen(p->d_name) + 2;
+            buf = malloc(len);
+            if (buf)
+            {
+                struct stat statbuf;
+                snprintf(buf, len, "%s/%s", path, p->d_name);
+                if (!stat(buf, &statbuf))
+                {
+                    if (S_ISDIR(statbuf.st_mode))
+                        r2 = ftp_rmd(buf, command_output);
+                    else
+                        r2 = unlink(buf);
+                }
+                free(buf);
+            }
+            r = r2;
+        }
+        closedir(d);
     }
-    else
+    if (!r)
     {
-        sprintf(command_output, "Unable to remove directory %s", dirName);
+        r = rmdir(path);
     }
 }
 
@@ -534,7 +575,7 @@ void ftp_rnto(char *oldName, char *newname, char *command_output)
     }
 }
 
-void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param)
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param, int param_count)
 {
     // char *host = malloc(16 * sizeof(char));
     char hostbuf[255];
@@ -548,7 +589,6 @@ void ftp_stat(char *command_output, char *client_pid, int command_count, char *c
     sprintf(server_pid, "211 Process id is %d\n", serpid);
 
     gethostname(host, 1023);
-    // printf("Hostname: %s\n", host);
 
     sprintf(hostname, "211 Server FTP talking to host %s, port \n", host);
     char *user = malloc(1024 * sizeof(char));
@@ -594,7 +634,30 @@ void ftp_stor(char *data_pipe, char *filename)
         fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
         sleep(5);
     }
-    if ((file_fd = open(filename, O_CREAT|O_WRONLY|O_TRUNC, 0777)) == -1)
+    if ((file_fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0777)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(port_fd, &ch, 1) == 1)
+    {
+        write(file_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
+}
+
+void ftp_appe(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+    while ((port_fd = open(data_pipe, O_RDONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_WRONLY | O_APPEND)) == -1)
     {
         printf("file problem\n");
     }
@@ -628,4 +691,63 @@ void ftp_retr(char *data_pipe, char *filename)
     }
     close(file_fd);
     close(port_fd);
+}
+
+void ftp_list(char *fileName, char *command_output)
+{
+    char *ts1 = strdup(fileName);
+    char *fName = basename(ts1);
+    if ((strcmp(fName, " ") == 0))
+    {
+        printf("In current working directory");
+        printFileNames();
+    }
+    else
+    {
+        int ret = 0;
+        struct stat path;
+        stat(fName, &path);
+        ret = S_ISREG(path.st_mode);
+        if (ret == 0)
+        {
+            printf("Given file is a directory\n");
+            chdir(fName);
+            printFileNames();
+            chdir("..");
+        }
+        else
+        {
+            printf("Given file is not a directory\n");
+            struct stat info;
+            if (stat(fName, &info) != 0)
+            {
+                perror("stat() error");
+            }
+            else
+            {
+                printf("inode: %d\n", (int)info.st_ino);
+                printf("dev id: %d\n", (int)info.st_dev);
+                printf("mode: %08x\n", info.st_mode);
+                printf("links: %d\n", info.st_nlink);
+                printf("uid: %d\n", (int)info.st_uid);
+                printf("gid: %d\n", (int)info.st_gid);
+            }
+        }
+    }
+}
+
+int printFileNames()
+{
+    struct dirent *de;
+    DIR *dr = opendir(".");
+    if (dr == NULL)
+    {
+        printf("Could not open current directory");
+        return 0;
+    }
+    while ((de = readdir(dr)) != NULL)
+    {
+        printf("%s\n", de->d_name);
+    }
+    closedir(dr);
 }

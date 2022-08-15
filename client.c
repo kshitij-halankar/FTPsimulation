@@ -21,14 +21,14 @@ int main(int argc, char *argv[])
     char ch;
     int mainpipe_fd, server_fd, client_fd;
     pid_t pid = getpid();
-    char *server_main_pipe = "/home/halanka/Desktop/asp/ftp/server_pipes/server_main_pipe";
+    char *server_main_pipe = "../server_pipes/server_main_pipe";
     char *data_pipe = malloc(255 * sizeof(char));
-    strcpy(data_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/");
+    strcpy(data_pipe, "../server_pipes/");
 
     char *server_pipe = malloc(1024 * sizeof(char)); // for receiving data form server
     char *client_pipe = malloc(1024 * sizeof(char)); // for sending commands to server
-    strcpy(server_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/serverpipe_");
-    strcpy(client_pipe, "/home/halanka/Desktop/asp/ftp/server_pipes/clientpipe_");
+    strcpy(server_pipe, "../server_pipes/serverpipe_");
+    strcpy(client_pipe, "../server_pipes/clientpipe_");
     char *client_pid = malloc(6 * sizeof(char));
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
@@ -123,9 +123,9 @@ int main(int argc, char *argv[])
         {
             ftp_retr(data_pipe, command_parameter);
         }
-        else if (strcmp(client_command, "REST") == 0)
-        {
-        }
+        // else if (strcmp(client_command, "REST") == 0)
+        // {
+        // }
 
         while ((server_fd = open(server_pipe, O_RDONLY)) == -1)
         {
@@ -175,6 +175,30 @@ void ftp_stor(char *data_pipe, char *filename)
     close(file_fd);
     close(port_fd);
 }
+
+void ftp_appe(char *data_pipe, char *filename)
+{
+    int port_fd;
+    char ch;
+    int file_fd;
+    while ((port_fd = open(data_pipe, O_WRONLY)) == -1)
+    {
+        fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
+        sleep(5);
+    }
+    if ((file_fd = open(filename, O_RDONLY)) == -1)
+    {
+        printf("file problem\n");
+    }
+    while (read(file_fd, &ch, 1) == 1)
+    {
+        write(port_fd, &ch, 1);
+        // fprintf(stderr, "%c", ch);
+    }
+    close(file_fd);
+    close(port_fd);
+}
+
 
 void ftp_retr(char *data_pipe, char *filename)
 {
