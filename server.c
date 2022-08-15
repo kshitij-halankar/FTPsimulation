@@ -14,6 +14,8 @@
 #include <dirent.h>
 #include <netdb.h>
 #include <libgen.h>
+#include <time.h>
+#include <pwd.h>
 
 void child(pid_t client, char *server_dir);
 void ftp_user();
@@ -21,10 +23,10 @@ int ftp_cwd(char *path, char *command_output);
 void ftp_cdup(char *command_output);
 void ftp_rein();
 void ftp_quit();
-void ftp_port(char *pipeName);
-void ftp_retr(char *data_pipe, char *filename);
-void ftp_stor(char *data_pipe, char *filename);
-void ftp_appe(char *data_pipe, char *filename);
+void ftp_port(char *pipeName, char *command_output);
+void ftp_retr(char *data_pipe, char *filename, char *command_output);
+void ftp_stor(char *data_pipe, char *filename, char *command_output);
+void ftp_appe(char *data_pipe, char *filename, char *command_output);
 void ftp_rest();
 void ftp_rnfr();
 void ftp_rnto(char *oldName, char *newname, char *command_output);
@@ -34,9 +36,9 @@ int ftp_rmd(const char *path, char *command_output);
 void ftp_mkd(char *dirName, char *command_output);
 void ftp_pwd(char *pwd);
 void ftp_list(char *fileName, char *command_output);
-void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param, int param_count);
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param);
 void ftp_noop(char *ok);
-int printFileNames();
+int printFileNames(char *command_output);
 
 int main(int argc, char *argv[])
 {
@@ -150,12 +152,8 @@ void child(pid_t pid, char *server_dir)
         {
             printf("%s\n", client_command);
         }
-
-        // if(strcmp(client_command, "QUIT") == 0) {
-        //     close(server_fd);
-        //     close(client_fd);
-        //     exit(0);
-        // }
+        client_command[strcspn(client_command, "\n")] = 0;
+        printf("after clean: %s\n", client_command);
 
         // working on command
         char command_delimiter[] = " ";
@@ -178,6 +176,7 @@ void child(pid_t pid, char *server_dir)
         {
             // handling
             command_name = client_command;
+            command_parameter = "";
             printf("else: command_name: %s client_command: %s\n", command_name, client_command);
         }
 
@@ -289,7 +288,7 @@ void child(pid_t pid, char *server_dir)
                 if (data_port == 0)
                 {
                     strcat(data_pipe, command_parameter);
-                    ftp_port(data_pipe);
+                    ftp_port(data_pipe, command_output);
                     data_port = 1;
                 }
                 else
@@ -301,7 +300,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_retr(data_pipe, command_parameter);
+                    ftp_retr(data_pipe, command_parameter, command_output);
                 }
                 else
                 {
@@ -312,7 +311,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_stor(data_pipe, command_parameter);
+                    ftp_stor(data_pipe, command_parameter, command_output);
                 }
                 else
                 {
@@ -323,7 +322,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_appe(data_pipe, command_parameter);
+                    ftp_appe(data_pipe, command_parameter, command_output);
                 }
                 else
                 {
@@ -397,12 +396,19 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "LIST") == 0)
             {
-                ftp_list(command_parameter, command_output);
+                // printf("command_parameter: %s\n", command_parameter);
+                if (data_port == 1)
+                {
+                    ftp_list(command_parameter, command_output);
+                }
+                else
+                {
+                    strcpy(command_output, "500 no data connection present.");
+                }
             }
             else if (strcmp(command_name, "STAT") == 0)
             {
-
-                ftp_stat(command_output, client_pid, command_counter, command_parameter, 0);
+                ftp_stat(command_output, client_pid, command_counter, command_parameter);
                 printf("%s\n", command_output);
             }
             else if (strcmp(command_name, "NOOP") == 0)
@@ -419,7 +425,7 @@ void child(pid_t pid, char *server_dir)
                 strcat(command_output, command_name);
             }
         }
-
+        printf("Writing server response\n");
         while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
         {
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);
@@ -528,6 +534,7 @@ int ftp_rmd(const char *path, char *command_output)
     {
         r = rmdir(path);
     }
+    strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
 void ftp_mkd(char *dirName, char *command_output)
@@ -575,56 +582,115 @@ void ftp_rnto(char *oldName, char *newname, char *command_output)
     }
 }
 
-void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param, int param_count)
+void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param)
 {
     // char *host = malloc(16 * sizeof(char));
-    char hostbuf[255];
-    char host[1024];
-    host[1023] = '\0';
-    char *server_pid = malloc(30 * sizeof(char));
-    char *hostname = malloc(1024 * sizeof(char));
-    char *curr_server_dir = malloc(255 * sizeof(char));
-    char *cmd_count = malloc(100 * sizeof(char));
-    pid_t serpid = getpid();
-    sprintf(server_pid, "211 Process id is %d\n", serpid);
+    if ((command_param != NULL) && (command_param[0] == '\0'))
+    {
+        char hostbuf[255];
+        char host[1024];
+        host[1023] = '\0';
+        char *server_pid = malloc(30 * sizeof(char));
+        char *hostname = malloc(1024 * sizeof(char));
+        char *curr_server_dir = malloc(255 * sizeof(char));
+        char *cmd_count = malloc(100 * sizeof(char));
+        pid_t serpid = getpid();
+        sprintf(server_pid, "211 Process id is %d\n", serpid);
 
-    gethostname(host, 1023);
+        gethostname(host, 1023);
 
-    sprintf(hostname, "211 Server FTP talking to host %s, port \n", host);
-    char *user = malloc(1024 * sizeof(char));
-    getcwd(curr_server_dir, 255);
-    sprintf(user, "211 User: %s  Working directory: %s\n", client_pid, curr_server_dir);
-    sprintf(cmd_count, "211 Command count is %d\n", command_count);
+        sprintf(hostname, "211 Server FTP talking to host %s, port \n", host);
+        char *user = malloc(1024 * sizeof(char));
+        getcwd(curr_server_dir, 255);
+        sprintf(user, "211 User: %s  Working directory: %s\n", client_pid, curr_server_dir);
+        sprintf(cmd_count, "211 Command count is %d\n", command_count);
 
-    strcpy(command_output, hostname);                                                               // 211 Server FTP talking to host #server_host, port <>
-    strcat(command_output, user);                                                                   // 211 User: #client_pid  Working directory: #cwd
-    strcat(command_output, "211 The control connection established using pipes (bidirectional)\n"); // 211 The control connection using pipes (bidirectional)
-    strcat(command_output, "211 There is no current data connection\n");                            // 211 There is no current data connection / Data connection established using pipes (#pipenames)
-    strcat(command_output, "211 using Mode: Stream, Structure: File\n");                            // 211 using Mode Stream, Structure File
-    strcat(command_output, cmd_count);                                                              // 211 Command count is ##cc
-    strcat(command_output, server_pid);                                                             // 211 Process id is ##server_pid
-    strcat(command_output, "211 Authentication type: None\n");                                      // 211 Authentication type: None
-    strcat(command_output, "211 *** end of status ***");                                            // 211 *** end of status ***
+        strcpy(command_output, hostname);                                                               // 211 Server FTP talking to host #server_host, port <>
+        strcat(command_output, user);                                                                   // 211 User: #client_pid  Working directory: #cwd
+        strcat(command_output, "211 The control connection established using pipes (bidirectional)\n"); // 211 The control connection using pipes (bidirectional)
+        strcat(command_output, "211 There is no current data connection\n");                            // 211 There is no current data connection / Data connection established using pipes (#pipenames)
+        strcat(command_output, "211 using Mode: Stream, Structure: File\n");                            // 211 using Mode Stream, Structure File
+        strcat(command_output, cmd_count);                                                              // 211 Command count is ##cc
+        strcat(command_output, server_pid);                                                             // 211 Process id is ##server_pid
+        strcat(command_output, "211 Authentication type: None\n");                                      // 211 Authentication type: None
+        strcat(command_output, "211 *** end of status ***");                                            // 211 *** end of status ***
+    }
+    else
+    {
+        DIR *dp;
+        struct dirent *dirp;
+        struct stat sb;
+        char *input = strdup(command_param);
+        strcpy(input, command_param);
+        if (stat(input, &sb) == 0 && S_ISDIR(sb.st_mode))
+        {
+            // printf("directory\n");
+            dp = opendir(command_param);
+            while ((dirp = readdir(dp)) != NULL)
+            {
+                char *dir_file = dirp->d_name;
+                struct stat dir_sb;
+                stat(dir_file, &dir_sb);
+                char *file_permission = malloc(12 * sizeof(char));
+                strcpy(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+                strcat(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IRUSR) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWUSR) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXUSR) ? "x" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IRGRP) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWGRP) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXGRP) ? "x" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IROTH) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWOTH) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXOTH) ? "x" : "-");
+                struct passwd *pws;
+                pws = getpwuid(dir_sb.st_uid);
+                char *uname = pws->pw_name;
+                char *date_time = ctime(&dir_sb.st_mtime);
+                date_time[strcspn(date_time, "\n")] = 0;
+                char *file_details = malloc(100 * sizeof(char));
+                sprintf(file_details, "%s %d %s %d %s %s\n", file_permission, sb.st_nlink, uname, sb.st_size, date_time, dir_file);
+                strcat(command_output, file_details);
+            }
+            closedir(dp);
+        }
+        else
+        {
+            // printf("file\n");
+            char *file_permission = malloc(12 * sizeof(char));
+            strcpy(file_permission, (S_ISDIR(sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (S_ISDIR(sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (sb.st_mode & S_IRUSR) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWUSR) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXUSR) ? "x" : "-");
+            strcat(file_permission, (sb.st_mode & S_IRGRP) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWGRP) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXGRP) ? "x" : "-");
+            strcat(file_permission, (sb.st_mode & S_IROTH) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWOTH) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXOTH) ? "x" : "-");
+            struct passwd *pws;
+            pws = getpwuid(sb.st_uid);
+            char *uname = pws->pw_name;
+            char *date_time = ctime(&sb.st_mtime);
+            date_time[strcspn(date_time, "\n")] = 0;
+            char *file_details = malloc(100 * sizeof(char));
+            sprintf(file_details, "%s %d %s %d %s %s\n", file_permission, sb.st_nlink, uname, sb.st_size, date_time, input);
+            strcpy(command_output, file_details);
+        }
+    }
 }
 
-void ftp_port(char *pipeName)
+void ftp_port(char *pipeName, char *command_output)
 {
     int port_fd;
     // creating command pipes
     mkfifo(pipeName, 0777);
     chmod(pipeName, 0777);
-    // while ((port_fd = open(pipeName, O_WRONLY)) == -1)
-    // {
-    //     fprintf(stderr, "trying to connect to data pipe %s\n", pipeName);
-    //     sleep(5);
-    // }
-
-    // write(port_fd, "data pipe created", 22);
-    // write(port_fd, &newline, 1);
-    // close(port_fd);
+    strcpy(command_output, "225 Data connection open; no transfer in progress.");
 }
 
-void ftp_stor(char *data_pipe, char *filename)
+void ftp_stor(char *data_pipe, char *filename, char *command_output)
 {
     int port_fd;
     char ch;
@@ -645,9 +711,10 @@ void ftp_stor(char *data_pipe, char *filename)
     }
     close(file_fd);
     close(port_fd);
+    strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
-void ftp_appe(char *data_pipe, char *filename)
+void ftp_appe(char *data_pipe, char *filename, char *command_output)
 {
     int port_fd;
     char ch;
@@ -668,9 +735,10 @@ void ftp_appe(char *data_pipe, char *filename)
     }
     close(file_fd);
     close(port_fd);
+    strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
-void ftp_retr(char *data_pipe, char *filename)
+void ftp_retr(char *data_pipe, char *filename, char *command_output)
 {
     int port_fd;
     char ch;
@@ -691,63 +759,107 @@ void ftp_retr(char *data_pipe, char *filename)
     }
     close(file_fd);
     close(port_fd);
+    strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
 void ftp_list(char *fileName, char *command_output)
 {
-    char *ts1 = strdup(fileName);
-    char *fName = basename(ts1);
-    if ((strcmp(fName, " ") == 0))
+    DIR *dp;
+    struct dirent *dirp;
+    struct stat sb;
+
+    if ((fileName != NULL) && (fileName[0] == '\0'))
+    // if (argc == 1)
+
     {
-        printf("In current working directory");
-        printFileNames();
+        dp = opendir("./");
+        while ((dirp = readdir(dp)) != NULL)
+        {
+            char *dir_file = dirp->d_name;
+            struct stat dir_sb;
+            stat(dir_file, &dir_sb);
+            char *file_permission = malloc(12 * sizeof(char));
+            strcpy(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IRUSR) ? "r" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IWUSR) ? "w" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IXUSR) ? "x" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IRGRP) ? "r" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IWGRP) ? "w" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IXGRP) ? "x" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IROTH) ? "r" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IWOTH) ? "w" : "-");
+            strcat(file_permission, (dir_sb.st_mode & S_IXOTH) ? "x" : "-");
+            struct passwd *pws;
+            pws = getpwuid(dir_sb.st_uid);
+            char *uname = pws->pw_name;
+            char *date_time = ctime(&dir_sb.st_mtime);
+            date_time[strcspn(date_time, "\n")] = 0;
+            char *file_details = malloc(100 * sizeof(char));
+            sprintf(file_details, "%s %d %s %d %s %s\n", file_permission, sb.st_nlink, uname, sb.st_size, date_time, dir_file);
+            strcat(command_output, file_details);
+        }
+        closedir(dp);
     }
     else
     {
-        int ret = 0;
-        struct stat path;
-        stat(fName, &path);
-        ret = S_ISREG(path.st_mode);
-        if (ret == 0)
+        char *input = strdup(fileName);
+        strcpy(input, fileName);
+        if (stat(input, &sb) == 0 && S_ISDIR(sb.st_mode))
         {
-            printf("Given file is a directory\n");
-            chdir(fName);
-            printFileNames();
-            chdir("..");
+            // printf("directory\n");
+            dp = opendir(fileName);
+            while ((dirp = readdir(dp)) != NULL)
+            {
+                char *dir_file = dirp->d_name;
+                struct stat dir_sb;
+                stat(dir_file, &dir_sb);
+                char *file_permission = malloc(12 * sizeof(char));
+                strcpy(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+                strcat(file_permission, (S_ISDIR(dir_sb.st_mode)) ? "d" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IRUSR) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWUSR) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXUSR) ? "x" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IRGRP) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWGRP) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXGRP) ? "x" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IROTH) ? "r" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IWOTH) ? "w" : "-");
+                strcat(file_permission, (dir_sb.st_mode & S_IXOTH) ? "x" : "-");
+                struct passwd *pws;
+                pws = getpwuid(dir_sb.st_uid);
+                char *uname = pws->pw_name;
+                char *date_time = ctime(&dir_sb.st_mtime);
+                date_time[strcspn(date_time, "\n")] = 0;
+                char *file_details = malloc(100 * sizeof(char));
+                sprintf(file_details, "%s %d %s %d %s %s\n", file_permission, sb.st_nlink, uname, sb.st_size, date_time, dir_file);
+                strcat(command_output, file_details);
+            }
+            closedir(dp);
         }
         else
         {
-            printf("Given file is not a directory\n");
-            struct stat info;
-            if (stat(fName, &info) != 0)
-            {
-                perror("stat() error");
-            }
-            else
-            {
-                printf("inode: %d\n", (int)info.st_ino);
-                printf("dev id: %d\n", (int)info.st_dev);
-                printf("mode: %08x\n", info.st_mode);
-                printf("links: %d\n", info.st_nlink);
-                printf("uid: %d\n", (int)info.st_uid);
-                printf("gid: %d\n", (int)info.st_gid);
-            }
+            // printf("file\n");
+            char *file_permission = malloc(12 * sizeof(char));
+            strcpy(file_permission, (S_ISDIR(sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (S_ISDIR(sb.st_mode)) ? "d" : "-");
+            strcat(file_permission, (sb.st_mode & S_IRUSR) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWUSR) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXUSR) ? "x" : "-");
+            strcat(file_permission, (sb.st_mode & S_IRGRP) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWGRP) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXGRP) ? "x" : "-");
+            strcat(file_permission, (sb.st_mode & S_IROTH) ? "r" : "-");
+            strcat(file_permission, (sb.st_mode & S_IWOTH) ? "w" : "-");
+            strcat(file_permission, (sb.st_mode & S_IXOTH) ? "x" : "-");
+            struct passwd *pws;
+            pws = getpwuid(sb.st_uid);
+            char *uname = pws->pw_name;
+            char *date_time = ctime(&sb.st_mtime);
+            date_time[strcspn(date_time, "\n")] = 0;
+            char *file_details = malloc(100 * sizeof(char));
+            sprintf(file_details, "%s %d %s %d %s %s\n", file_permission, sb.st_nlink, uname, sb.st_size, date_time, input);
+            strcpy(command_output, file_details);
         }
     }
-}
-
-int printFileNames()
-{
-    struct dirent *de;
-    DIR *dr = opendir(".");
-    if (dr == NULL)
-    {
-        printf("Could not open current directory");
-        return 0;
-    }
-    while ((de = readdir(dr)) != NULL)
-    {
-        printf("%s\n", de->d_name);
-    }
-    closedir(dr);
 }

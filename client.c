@@ -11,7 +11,11 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <libgen.h>
+#include <dirent.h>
 #include <netdb.h>
+#include <libgen.h>
+#include <time.h>
+#include <pwd.h>
 
 void ftp_stor(char *data_pipe, char *filename);
 void ftp_retr(char *data_pipe, char *filename);
@@ -78,8 +82,8 @@ int main(int argc, char *argv[])
         char command_buf[1024];
         fgets(command_buf, 1024, stdin);
         command_buf[strcspn(command_buf, "\n")] = 0;
-        // fprintf(stderr, "typed command: %s\n",command_buf);
-        write(client_fd, command_buf, strlen(command_buf));
+        fprintf(stderr, "typed command: %s\n",command_buf);
+        write(client_fd, command_buf, 1024);
         close(client_fd);
 
         char *client_command = malloc(1024 * sizeof(char));
@@ -92,19 +96,19 @@ int main(int argc, char *argv[])
         if (command_pointer != NULL)
         {
             command_name = command_pointer;
-            printf("command name: %s\n", command_name);
+            // printf("command name: %s\n", command_name);
             command_pointer = strtok(NULL, command_delimiter);
             if (command_pointer != NULL)
             {
                 command_parameter = command_pointer;
-                printf("command parameter: %s\n", command_parameter);
+                // printf("command parameter: %s\n", command_parameter);
             }
         }
         else
         {
             // handling
             command_name = client_command;
-            printf("else: command_name: %s client_command: %s\n", command_name, client_command);
+            // printf("else: command_name: %s client_command: %s\n", command_name, client_command);
         }
 
         if (strcmp(client_command, "PORT") == 0)
@@ -126,7 +130,7 @@ int main(int argc, char *argv[])
         // else if (strcmp(client_command, "REST") == 0)
         // {
         // }
-
+        printf("waiting for server response\n");
         while ((server_fd = open(server_pipe, O_RDONLY)) == -1)
         {
             fprintf(stderr, "trying to connect to server pipe %d\n", pid);
