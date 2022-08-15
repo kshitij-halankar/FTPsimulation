@@ -17,16 +17,35 @@
 #include <time.h>
 #include <pwd.h>
 
-void ftp_stor(char *data_pipe, char *filename);
+void ftp_stor(char *data_pipe, char *filename, int *pos);
+void ftp_appe(char *data_pipe, char *filename, int *pos);
 void ftp_retr(char *data_pipe, char *filename);
+
+char *server_pipe_g;
+char *client_pipe_g;
+
+void exit_handler()
+{
+    printf("exiting\n");
+    exit(0);
+}
 
 int main(int argc, char *argv[])
 {
     char ch;
+    int pos = 0;
     int mainpipe_fd, server_fd, client_fd;
     pid_t pid = getpid();
     char *server_main_pipe = "../server_pipes/server_main_pipe";
     char *data_pipe = malloc(255 * sizeof(char));
+
+    server_pipe_g = malloc(1024 * sizeof(char));
+    client_pipe_g = malloc(1024 * sizeof(char));
+
+    signal(SIGINT, exit_handler);
+    signal(SIGTSTP, exit_handler);
+    signal(SIGUSR1, exit_handler);
+
     strcpy(data_pipe, "../server_pipes/");
 
     char *server_pipe = malloc(1024 * sizeof(char)); // for receiving data form server
@@ -39,6 +58,9 @@ int main(int argc, char *argv[])
     strcat(client_pipe, client_pid);
     printf("server_pipe: %s\n", server_pipe);
     printf("client_pipe: %s\n", client_pipe);
+
+    strcpy(server_pipe_g, server_pipe);
+    strcpy(client_pipe_g, client_pipe);
 
     // open main server pipe and write pid
     while ((mainpipe_fd = open(server_main_pipe, O_WRONLY)) == -1)
@@ -125,19 +147,20 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(client_command, "STOR") == 0)
         {
-            ftp_stor(data_pipe, command_parameter);
+            ftp_stor(data_pipe, command_parameter, &pos);
         }
         else if (strcmp(client_command, "APPE") == 0)
         {
-            ftp_stor(data_pipe, command_parameter);
+            ftp_stor(data_pipe, command_parameter, &pos);
         }
         else if (strcmp(client_command, "RETR") == 0)
         {
             ftp_retr(data_pipe, command_parameter);
         }
-        // else if (strcmp(client_command, "REST") == 0)
-        // {
-        // }
+        else if (strcmp(client_command, "REST") == 0)
+        {
+            pos = atoi(command_parameter);
+        }
         printf("waiting for server response\n");
         while ((server_fd = open(server_pipe, O_RDONLY)) == -1)
         {
@@ -165,7 +188,7 @@ int main(int argc, char *argv[])
     // close(fd);
 }
 
-void ftp_stor(char *data_pipe, char *filename)
+void ftp_stor(char *data_pipe, char *filename, int *pos)
 {
     int port_fd;
     char ch;
@@ -179,6 +202,8 @@ void ftp_stor(char *data_pipe, char *filename)
     {
         printf("file problem\n");
     }
+    lseek(file_fd, *pos, SEEK_SET);
+    *pos = 0;
     while (read(file_fd, &ch, 1) == 1)
     {
         write(port_fd, &ch, 1);
@@ -188,7 +213,7 @@ void ftp_stor(char *data_pipe, char *filename)
     close(port_fd);
 }
 
-void ftp_appe(char *data_pipe, char *filename)
+void ftp_appe(char *data_pipe, char *filename, int *pos)
 {
     int port_fd;
     char ch;
@@ -202,6 +227,8 @@ void ftp_appe(char *data_pipe, char *filename)
     {
         printf("file problem\n");
     }
+    lseek(file_fd, *pos, SEEK_SET);
+    *pos = 0;
     while (read(file_fd, &ch, 1) == 1)
     {
         write(port_fd, &ch, 1);

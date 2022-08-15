@@ -19,13 +19,15 @@
 #include <time.h>
 #include <pwd.h>
 
-char *server_pipe_g;
-char *client_pipe_g;
-char *data_pipe_g;
-char *server_main_pipe_g;
+static char *pipe_arr[1024];
+static int pipe_count = 0;
 
 int child_count = 0;
 int parent_pid;
+pid_t client_pid_g = 0;
+static pid_t client_pid_arr[1024];
+static int client_counter = 0;
+static char *pipe_path;
 
 void child(pid_t client, char *server_dir);
 void ftp_user();
@@ -34,15 +36,14 @@ void ftp_cdup(char *command_output);
 void ftp_rein();
 void ftp_quit();
 void ftp_port(char *pipeName, char *command_output);
-void ftp_retr(char *data_pipe, char *filename, char *command_output);
-void ftp_stor(char *data_pipe, char *filename, char *command_output);
-void ftp_appe(char *data_pipe, char *filename, char *command_output);
-void ftp_rest();
+void ftp_retr(char *data_pipe, char *filename, char *command_output, int *filepos);
+void ftp_stor(char *data_pipe, char *filename, char *command_output, int *filepos);
+void ftp_appe(char *data_pipe, char *filename, char *command_output, int *filepos);
+void ftp_rest(char *file_pos, int *pos, char *command_output);
 void ftp_rnfr();
 void ftp_rnto(char *oldName, char *newname, char *command_output);
 void ftp_abor();
 void ftp_dele(char *fileName, char *command_output);
-// int ftp_rmd(const char *path, char *command_output);
 int ftp_rmd(char *filepath);
 void ftp_mkd(char *dirName, char *command_output);
 void ftp_pwd(char *pwd);
@@ -53,13 +54,24 @@ int unlink_rem(const char *filepath, const struct stat *sb, int type_flag, struc
 
 void exit_handler()
 {
-    unlink(server_main_pipe_g);
-    unlink(data_pipe_g);
-    unlink(server_pipe_g);
-    unlink(client_pipe_g);
+    int m = 0;
+    for (m = 0; m < pipe_count; m++)
+    {
+        // printf("pipes--------- %s\n", pipe_arr[m]);
+        unlink(pipe_arr[m]);
+    }
+
     printf("exiting : %d\n", getpid());
     if (parent_pid == getpid())
     {
+        int k = 0;
+        printf("client_counter: %d\n", client_counter);
+        for (k = 0; k < client_counter; k++)
+        {
+            pid_t client_pid1 = client_pid_arr[k];
+            printf("sending quit signal to %d\n", client_pid1);
+            kill(client_pid1, SIGUSR1);
+        }
         kill(0, SIGINT);
         sleep(1);
         while (1)
@@ -86,10 +98,7 @@ int main(int argc, char *argv[])
     pid_t client_pid;
     char *server_dir = malloc(PATH_MAX * sizeof(char));
 
-    server_pipe_g = malloc(1024 * sizeof(char));
-    client_pipe_g = malloc(1024 * sizeof(char));
-    data_pipe_g = malloc(1024 * sizeof(char));
-    server_main_pipe_g = malloc(1024 * sizeof(char));
+    pipe_path = malloc(255 * sizeof(char));
 
     signal(SIGINT, exit_handler);
     signal(SIGTSTP, exit_handler);
@@ -97,13 +106,17 @@ int main(int argc, char *argv[])
     if (argc == 2)
     {
         strcpy(server_dir, argv[1]);
-        // server_dir = argv[1];
     }
     else
     {
         getcwd(server_dir, PATH_MAX);
     }
-    char *server_main_pipe = "../server_pipes/server_main_pipe";
+
+    getcwd(pipe_path, 255);
+    strcat(pipe_path, "/../server_pipes/");
+    char *server_main_pipe = malloc(1024 * sizeof(char));
+    strcpy(server_main_pipe, pipe_path);
+    strcat(server_main_pipe, "server_main_pipe");
 
     chdir(server_dir);
 
@@ -117,7 +130,13 @@ int main(int argc, char *argv[])
         exit(1);
     }
     chmod(server_main_pipe, 0777);
-    strcpy(server_main_pipe_g, server_main_pipe);
+    pipe_arr[pipe_count] = malloc(1024 * sizeof(char));
+    strcpy(pipe_arr[pipe_count], pipe_path);
+    strcat(pipe_arr[pipe_count], "server_main_pipe");
+    // strcpy(server_main_pipe, pipe_arr[pipe_count]);
+    pipe_count++;
+
+    // strcpy(server_main_pipe_g, server_main_pipe);
     while (1)
     {
         fprintf(stderr, "Waiting for a client\n");
@@ -125,6 +144,10 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Got a client: ");
         read(fd, &client_pid, sizeof(pid_t));
         fprintf(stderr, "%ld\n", client_pid);
+        client_pid_arr[client_counter] = client_pid;
+        client_counter++;
+        // printf("fork client_counter: %d\n", client_counter);
+        // printf("fork client_pid_arr: %d\n", client_pid_arr[0]);
         if (fork() == 0)
         {
             child_count++;
@@ -133,7 +156,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            // waitpid(0, &status, WNOHANG);
+            waitpid(0, &status, WNOHANG);
         }
     }
 }
@@ -150,15 +173,25 @@ void child(pid_t pid, char *server_dir)
     char *client_pipe = malloc(1024 * sizeof(char)); // for reading commands from client
     char *data_pipe = malloc(255 * sizeof(char));
     int data_port = 0;
-    strcpy(data_pipe, "../server_pipes/");
-    strcpy(server_pipe, "../server_pipes/serverpipe_");
-    strcpy(client_pipe, "../server_pipes/clientpipe_");
+    int filepos = 0;
+
+    strcpy(server_pipe, pipe_path);
+    strcat(server_pipe, "serverpipe_");
+
+    strcpy(client_pipe, pipe_path);
+    strcat(client_pipe, "clientpipe_");
+
+    strcpy(data_pipe, pipe_path);
+
     char *client_pid = malloc(6 * sizeof(char));
+    client_pid_g = pid;
+    printf("Client pid _ g: %d\n", client_pid_g);
     sprintf(client_pid, "%d", pid);
     strcat(server_pipe, client_pid);
     strcat(client_pipe, client_pid);
     printf("server_pipe: %s\n", server_pipe);
     printf("client_pipe: %s\n", client_pipe);
+    printf("data_pipe: %s\n", data_pipe);
 
     char newline = '\n';
     int mainpipe_fd, server_fd, client_fd, i;
@@ -166,11 +199,22 @@ void child(pid_t pid, char *server_dir)
     // creating command pipes
     mkfifo(server_pipe, 0777);
     chmod(server_pipe, 0777);
+    pipe_arr[pipe_count] = malloc(1024 * sizeof(char));
+    strcpy(pipe_arr[pipe_count], pipe_path);
+    strcat(pipe_arr[pipe_count], "serverpipe_");
+    strcat(pipe_arr[pipe_count], client_pid);
+    pipe_count++;
+
     mkfifo(client_pipe, 0777);
     chmod(client_pipe, 0777);
+    pipe_arr[pipe_count] = malloc(1024 * sizeof(char));
+    strcpy(pipe_arr[pipe_count], pipe_path);
+    strcat(pipe_arr[pipe_count], "clientpipe_");
+    strcat(pipe_arr[pipe_count], client_pid);
+    pipe_count++;
 
-    strcpy(server_pipe_g, server_pipe);
-    strcpy(client_pipe_g, client_pipe);
+    // strcpy(server_pipe_g, server_pipe);
+    // strcpy(client_pipe_g, client_pipe);
 
     while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
     {
@@ -340,7 +384,7 @@ void child(pid_t pid, char *server_dir)
                 {
                     strcat(data_pipe, command_parameter);
                     ftp_port(data_pipe, command_output);
-                    strcpy(data_pipe_g, data_pipe);
+                    // strcpy(data_pipe_g, data_pipe);
                     data_port = 1;
                 }
                 else
@@ -352,7 +396,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_retr(data_pipe, command_parameter, command_output);
+                    ftp_retr(data_pipe, command_parameter, command_output, &filepos);
                 }
                 else
                 {
@@ -363,7 +407,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_stor(data_pipe, command_parameter, command_output);
+                    ftp_stor(data_pipe, command_parameter, command_output, &filepos);
                 }
                 else
                 {
@@ -374,7 +418,7 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    ftp_appe(data_pipe, command_parameter, command_output);
+                    ftp_appe(data_pipe, command_parameter, command_output, &filepos);
                 }
                 else
                 {
@@ -385,8 +429,8 @@ void child(pid_t pid, char *server_dir)
             {
                 if (data_port == 1)
                 {
-                    // close data connection
-                    data_port = 0;
+                    ftp_rest(command_parameter, &filepos, command_output);
+                    printf("filepos: %d\n", filepos);
                 }
                 else
                 {
@@ -755,10 +799,15 @@ void ftp_port(char *pipeName, char *command_output)
     // creating command pipes
     mkfifo(pipeName, 0777);
     chmod(pipeName, 0777);
+    pipe_arr[pipe_count] = malloc(1024 * sizeof(char));
+    // strcpy(pipe_arr[pipe_count], pipeName);
+    strcpy(pipe_arr[pipe_count], pipe_path);
+    strcat(pipe_arr[pipe_count], pipeName);
+    pipe_count++;
     strcpy(command_output, "225 Data connection open; no transfer in progress.");
 }
 
-void ftp_stor(char *data_pipe, char *filename, char *command_output)
+void ftp_stor(char *data_pipe, char *filename, char *command_output, int *filepos)
 {
     int port_fd;
     char ch;
@@ -772,6 +821,9 @@ void ftp_stor(char *data_pipe, char *filename, char *command_output)
     {
         printf("file problem\n");
     }
+    // printf("filepos: %d\n", filepos);
+    lseek(port_fd, *filepos, SEEK_SET);
+    *filepos = 0;
     while (read(port_fd, &ch, 1) == 1)
     {
         write(file_fd, &ch, 1);
@@ -782,7 +834,7 @@ void ftp_stor(char *data_pipe, char *filename, char *command_output)
     strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
-void ftp_appe(char *data_pipe, char *filename, char *command_output)
+void ftp_appe(char *data_pipe, char *filename, char *command_output, int *filepos)
 {
     int port_fd;
     char ch;
@@ -796,6 +848,8 @@ void ftp_appe(char *data_pipe, char *filename, char *command_output)
     {
         printf("file problem\n");
     }
+    lseek(port_fd, *filepos, SEEK_SET);
+    *filepos = 0;
     while (read(port_fd, &ch, 1) == 1)
     {
         write(file_fd, &ch, 1);
@@ -806,7 +860,7 @@ void ftp_appe(char *data_pipe, char *filename, char *command_output)
     strcpy(command_output, "250 Requested file action okay, completed.");
 }
 
-void ftp_retr(char *data_pipe, char *filename, char *command_output)
+void ftp_retr(char *data_pipe, char *filename, char *command_output, int *filepos)
 {
     int port_fd;
     char ch;
@@ -820,6 +874,8 @@ void ftp_retr(char *data_pipe, char *filename, char *command_output)
     {
         printf("file problem\n");
     }
+    lseek(file_fd, *filepos, SEEK_SET);
+    *filepos = 0;
     while (read(file_fd, &ch, 1) == 1)
     {
         write(port_fd, &ch, 1);
@@ -930,4 +986,15 @@ void ftp_list(char *fileName, char *command_output)
             strcpy(command_output, file_details);
         }
     }
+}
+
+void ftp_rest(char *file_pos, int *pos, char *command_output)
+{
+    // printf("file_pos: %s\n", file_pos);
+    if ((*pos = atoi(file_pos)) == 0)
+    {
+        strcpy(command_output, "501 Syntax error in parameters or arguments.");
+        // printf("command_output: %s\n", command_output);
+    }
+    // printf("pos: %d\n", &pos);
 }
