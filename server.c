@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 500
+#include <ftw.h>
 #include <wait.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -17,6 +19,14 @@
 #include <time.h>
 #include <pwd.h>
 
+char *server_pipe_g;
+char *client_pipe_g;
+char *data_pipe_g;
+char *server_main_pipe_g;
+
+int child_count = 0;
+int parent_pid;
+
 void child(pid_t client, char *server_dir);
 void ftp_user();
 int ftp_cwd(char *path, char *command_output);
@@ -32,20 +42,58 @@ void ftp_rnfr();
 void ftp_rnto(char *oldName, char *newname, char *command_output);
 void ftp_abor();
 void ftp_dele(char *fileName, char *command_output);
-int ftp_rmd(const char *path, char *command_output);
+// int ftp_rmd(const char *path, char *command_output);
+int ftp_rmd(char *filepath);
 void ftp_mkd(char *dirName, char *command_output);
 void ftp_pwd(char *pwd);
 void ftp_list(char *fileName, char *command_output);
 void ftp_stat(char *command_output, char *client_pid, int command_count, char *command_param);
 void ftp_noop(char *ok);
-int printFileNames(char *command_output);
+int unlink_rem(const char *filepath, const struct stat *sb, int type_flag, struct FTW *ftw_buf);
+
+void exit_handler()
+{
+    unlink(server_main_pipe_g);
+    unlink(data_pipe_g);
+    unlink(server_pipe_g);
+    unlink(client_pipe_g);
+    printf("exiting : %d\n", getpid());
+    if (parent_pid == getpid())
+    {
+        kill(0, SIGINT);
+        sleep(1);
+        while (1)
+        {
+            if (child_count == 0)
+            {
+                exit(0);
+            }
+        }
+    }
+    else
+    {
+        child_count--;
+        exit(0);
+    }
+}
 
 int main(int argc, char *argv[])
 {
+    parent_pid = getpid();
+    printf("parent: %d\n", parent_pid);
     int fd, status;
     char ch;
     pid_t client_pid;
     char *server_dir = malloc(PATH_MAX * sizeof(char));
+
+    server_pipe_g = malloc(1024 * sizeof(char));
+    client_pipe_g = malloc(1024 * sizeof(char));
+    data_pipe_g = malloc(1024 * sizeof(char));
+    server_main_pipe_g = malloc(1024 * sizeof(char));
+
+    signal(SIGINT, exit_handler);
+    signal(SIGTSTP, exit_handler);
+
     if (argc == 2)
     {
         strcpy(server_dir, argv[1]);
@@ -56,15 +104,12 @@ int main(int argc, char *argv[])
         getcwd(server_dir, PATH_MAX);
     }
     char *server_main_pipe = "../server_pipes/server_main_pipe";
-    // strcat(server_main_pipe, server_dir);
-    // strcat(server_main_pipe,"/server_main_pipe");
 
     chdir(server_dir);
 
     printf("server directory: %s\n", server_dir);
     printf("server main pipe: %s\n", server_main_pipe);
 
-    // unlink("/home/halanka/Desktop/asp/server");
     unlink(server_main_pipe);
     if (mkfifo(server_main_pipe, 0777))
     {
@@ -72,6 +117,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     chmod(server_main_pipe, 0777);
+    strcpy(server_main_pipe_g, server_main_pipe);
     while (1)
     {
         fprintf(stderr, "Waiting for a client\n");
@@ -81,12 +127,13 @@ int main(int argc, char *argv[])
         fprintf(stderr, "%ld\n", client_pid);
         if (fork() == 0)
         {
+            child_count++;
             close(fd);
             child(client_pid, server_dir);
         }
         else
         {
-            waitpid(0, &status, WNOHANG);
+            // waitpid(0, &status, WNOHANG);
         }
     }
 }
@@ -121,6 +168,10 @@ void child(pid_t pid, char *server_dir)
     chmod(server_pipe, 0777);
     mkfifo(client_pipe, 0777);
     chmod(client_pipe, 0777);
+
+    strcpy(server_pipe_g, server_pipe);
+    strcpy(client_pipe_g, client_pipe);
+
     while ((server_fd = open(server_pipe, O_WRONLY)) == -1)
     {
         fprintf(stderr, "trying to connect to server pipe %d\n", pid);
@@ -289,6 +340,7 @@ void child(pid_t pid, char *server_dir)
                 {
                     strcat(data_pipe, command_parameter);
                     ftp_port(data_pipe, command_output);
+                    strcpy(data_pipe_g, data_pipe);
                     data_port = 1;
                 }
                 else
@@ -379,7 +431,8 @@ void child(pid_t pid, char *server_dir)
             }
             else if (strcmp(command_name, "RMD") == 0)
             {
-                ftp_rmd(command_parameter, command_output);
+                ftp_rmd(command_parameter);
+                strcpy(command_output, "250 Requested file action okay, completed.");
             }
             else if (strcmp(command_name, "MKD") == 0)
             {
@@ -495,47 +548,62 @@ void ftp_dele(char *fileName, char *command_output)
     }
 }
 
-int ftp_rmd(const char *path, char *command_output)
+int unlink_rem(const char *filepath, const struct stat *sb, int type_flag, struct FTW *ftw_buf)
 {
-    DIR *d = opendir(path);
-    size_t path_len = strlen(path);
-    int r = -1;
-    if (d)
+    int rem = remove(filepath);
+    if (rem)
     {
-        struct dirent *p;
-        r = 0;
-        while (!r && (p = readdir(d)))
-        {
-            int r2 = -1;
-            char *buf;
-            size_t len;
-            if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
-                continue;
-            len = path_len + strlen(p->d_name) + 2;
-            buf = malloc(len);
-            if (buf)
-            {
-                struct stat statbuf;
-                snprintf(buf, len, "%s/%s", path, p->d_name);
-                if (!stat(buf, &statbuf))
-                {
-                    if (S_ISDIR(statbuf.st_mode))
-                        r2 = ftp_rmd(buf, command_output);
-                    else
-                        r2 = unlink(buf);
-                }
-                free(buf);
-            }
-            r = r2;
-        }
-        closedir(d);
+        perror(filepath);
     }
-    if (!r)
-    {
-        r = rmdir(path);
-    }
-    strcpy(command_output, "250 Requested file action okay, completed.");
+    return rem;
 }
+
+int ftp_rmd(char *filepath)
+{
+    return nftw(filepath, unlink_rem, 64, FTW_DEPTH | FTW_PHYS);
+}
+
+// int ftp_rmd(const char *path, char *command_output)
+// {
+//     DIR *d = opendir(path);
+//     size_t path_len = strlen(path);
+//     int r = -1;
+//     if (d)
+//     {
+//         struct dirent *p;
+//         r = 0;
+//         while (!r && (p = readdir(d)))
+//         {
+//             int r2 = -1;
+//             char *buf;
+//             size_t len;
+//             if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+//                 continue;
+//             len = path_len + strlen(p->d_name) + 2;
+//             buf = malloc(len);
+//             if (buf)
+//             {
+//                 struct stat statbuf;
+//                 snprintf(buf, len, "%s/%s", path, p->d_name);
+//                 if (!stat(buf, &statbuf))
+//                 {
+//                     if (S_ISDIR(statbuf.st_mode))
+//                         r2 = ftp_rmd(buf, command_output);
+//                     else
+//                         r2 = unlink(buf);
+//                 }
+//                 free(buf);
+//             }
+//             r = r2;
+//         }
+//         closedir(d);
+//     }
+//     if (!r)
+//     {
+//         r = rmdir(path);
+//     }
+//     strcpy(command_output, "250 Requested file action okay, completed.");
+// }
 
 void ftp_mkd(char *dirName, char *command_output)
 {

@@ -62,15 +62,23 @@ int main(int argc, char *argv[])
     }
     while (1)
     {
-        // int i=0;
-        // char server_data[1024];
+        int j = 0;
+        char server_response_data[1024];
         while (read(server_fd, &ch, 1) == 1)
         {
             fprintf(stderr, "%c", ch);
-            // server_data[i]=ch;
-            // i++;
+            server_response_data[j] = ch;
+            j++;
         }
         close(server_fd);
+        char *server_resp = malloc(1024 * sizeof(char));
+        strcpy(server_resp, server_response_data);
+        printf("server_resp : %s\n", server_resp);
+        if (strcmp(server_resp, "server exit") == 0)
+        {
+            printf("Client exiting.\n");
+            exit(0);
+        }
         chmod(client_pipe, 0777);
 
         while ((client_fd = open(client_pipe, O_WRONLY)) == -1)
@@ -82,7 +90,7 @@ int main(int argc, char *argv[])
         char command_buf[1024];
         fgets(command_buf, 1024, stdin);
         command_buf[strcspn(command_buf, "\n")] = 0;
-        fprintf(stderr, "typed command: %s\n",command_buf);
+        fprintf(stderr, "typed command: %s\n", command_buf);
         write(client_fd, command_buf, 1024);
         close(client_fd);
 
@@ -203,7 +211,6 @@ void ftp_appe(char *data_pipe, char *filename)
     close(port_fd);
 }
 
-
 void ftp_retr(char *data_pipe, char *filename)
 {
     int port_fd;
@@ -215,7 +222,7 @@ void ftp_retr(char *data_pipe, char *filename)
         fprintf(stderr, "trying to connect to data pipe %s\n", data_pipe);
         sleep(5);
     }
-    if ((file_fd = open(filename, O_CREAT|O_WRONLY|O_TRUNC, 0777)) == -1)
+    if ((file_fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0777)) == -1)
     {
         printf("file problem\n");
     }
